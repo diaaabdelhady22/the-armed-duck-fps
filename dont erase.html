@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Armed Duck FPS Game</title>
+  <style>
+    body { margin: 0; overflow: hidden; font-family: sans-serif; }
+    canvas { background: #87CEEB; display: block; }
+
+    #homeScreen {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.8);
+      color: white;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      font-size: 2em;
+    }
+
+    .levelText {
+      position: absolute;
+      top: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 2em;
+      color: black;
+      animation: fadeOut 2s forwards;
+    }
+
+    @keyframes fadeOut {
+      0% { opacity: 1; }
+      100% { opacity: 0; transform: translateY(-20px); }
+    }
+
+    #mobileControls {
+      position: absolute;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: none;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 10px;
+      z-index: 10;
+    }
+
+    .controlBtn {
+      background: rgba(255, 255, 255, 0.8);
+      border: 2px solid #333;
+      border-radius: 8px;
+      font-size: 1.2em;
+      padding: 15px 20px;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .controlRow {
+      display: flex;
+      justify-content: center;
+      width: 100%;
+    }
+  </style>
+  <link rel="stylesheet" href="armed.css">
+</head>
+<body>
+  <div id="homeScreen">
+    <h1>Armed Duck FPS Game</h1>
+    <button id="startGame">New Game</button>
+    <button id="continueGame">Continue</button>
+    <button id="showMobileControls">Mobile Controls</button>
+  </div>
+
+  <canvas id="gameCanvas"></canvas>
+
+  <div id="mobileControls">
+    <div class="controlRow">
+      <div class="controlBtn" data-key="w">↑</div>
+    </div>
+    <div class="controlRow">
+      <div class="controlBtn" data-key="a">←</div>
+      <div class="controlBtn" data-key="s">↓</div>
+      <div class="controlBtn" data-key="d">→</div>
+    </div>
+    <div class="controlRow">
+      <div class="controlBtn" id="shootBtn">Shoot</div>
+      <div class="controlBtn" id="specialBtn">Special</div>
+    </div>
+  </div>
+
+  <script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+
+    const homeScreen = document.getElementById('homeScreen');
+    const mobileControls = document.getElementById('mobileControls');
+    const shootBtn = document.getElementById('shootBtn');
+    const specialBtn = document.getElementById('specialBtn');
+
+    let player = { x: canvas.width / 2, y: canvas.height / 2, angle: 0, health: 300 };
+    let bullets = [];
+    let enemies = [];
+    let enemyBullets = [];
+    let healthDots = [];
+    let healthDotTimer = 0;
+    let level = 1;
+    let specialAbilityReady = true;
+    let specialAbilityCooldown = 15000;
+    let explosionEffect = null;
+    let boss = null;
+    let levelText = null;
+    let gameStarted = false;
+
+    let keys = {};
+    let mobileKeyHeld = {};
+
+    function createEnemies() {
+      enemies = [];
+      for (let i = 0; i < 5 * level; i++) {
+        enemies.push({ x: Math.random() * canvas.width, y: Math.random() * canvas.height, health: 10 });
+      }
+    }
+
+    function createHealthDot() {
+      healthDots.push({ x: Math.random() * canvas.width, y: Math.random() * canvas.height, collected: false });
+    }
+
+    function shoot() {
+      bullets.push({ x: player.x, y: player.y, angle: player.angle });
+    }
+
+    function useSpecialAbility() {
+      if (specialAbilityReady) {
+        explosionEffect = { x: player.x, y: player.y, radius: 50, duration: 1000 };
+        enemies = [];
+        boss = null;
+        specialAbilityReady = false;
+        setTimeout(() => {
+          specialAbilityReady = true;
+        }, specialAbilityCooldown);
+      }
+    }
+
+    function updateHealthDots() {
+      healthDotTimer++;
+      if (healthDotTimer >= 1800) {
+        createHealthDot();
+        healthDotTimer = 0;
+      }
+
+      healthDots.forEach(dot => {
+        const dist = Math.hypot(dot.x - player.x, dot.y - player.y);
+        if (dist < 20 && !dot.collected) {
+          player.health = Math.min(player.health + 100, 300);
+          dot.collected = true;
+        }
+      });
+
+      healthDots = healthDots.filter(dot => !dot.collected);
+    }
+
+    function updateBoss() {
+      if (level % 10 === 0 && boss === null) {
+        boss = { x: canvas.width / 2, y: canvas.height / 2, health: 200 + ((level / 10 - 1) * 100) };
+        enemies = [];
+      }
+
+      if (boss) {
+        const angleToPlayer = Math.atan2(player.y - boss.y, player.x - boss.x);
+        boss.x += Math.cos(angleToPlayer) * 2;
+        boss.y += Math.sin(angleToPlayer) * 2;
+
+        if (Math.random() < 0.02) {
+          const bulletAngle = Math.atan2(player.y - boss.y, player.x - boss.x);
+          enemyBullets.push({ x: boss.x, y: boss.y, angle: bulletAngle, damage: 2 });
+        }
+
+        bullets = bullets.filter(bullet => {
+          const dist = Math.hypot(bullet.x - boss.x, bullet.y - boss.y);
+          if (dist < 30) {
+            boss.health -= 10;
+            if (boss.health <= 0) boss = null;
+            return false;
+          }
+          return true;
+        });
+      }
+    }
+
+    function update() {
+      if (keys['w'] || mobileKeyHeld['w']) player.y -= 5;
+      if (keys['s'] || mobileKeyHeld['s']) player.y += 5;
+      if (keys['a'] || mobileKeyHeld['a']) player.x -= 5;
+      if (keys['d'] || mobileKeyHeld['d']) player.x += 5;
+
+      bullets.forEach(bullet => {
+        bullet.x += Math.cos(bullet.angle) * 10;
+        bullet.y += Math.sin(bullet.angle) * 10;
+      });
+
+      enemyBullets.forEach(bullet => {
+        bullet.x += Math.cos(bullet.angle) * 5;
+        bullet.y += Math.sin(bullet.angle) * 5;
+      });
+
+      bullets = bullets.filter(bullet => {
+        return !enemies.some(enemy => {
+          const dist = Math.hypot(bullet.x - enemy.x, bullet.y - enemy.y);
+          if (dist < 20) {
+            enemy.health -= 10;
+            if (enemy.health <= 0) enemies.splice(enemies.indexOf(enemy), 1);
+            return true;
+          }
+          return false;
+        });
+      });
+
+      enemyBullets = enemyBullets.filter(bullet => {
+        const dist = Math.hypot(bullet.x - player.x, bullet.y - player.y);
+        if (dist < 10) {
+          player.health -= 10;
+          return false;
+        }
+        return true;
+      });
+
+      enemies.forEach(enemy => {
+        const angleToPlayer = Math.atan2(player.y - enemy.y, player.x - enemy.x);
+        enemy.x += Math.cos(angleToPlayer) * 2;
+        enemy.y += Math.sin(angleToPlayer) * 2;
+
+        if (Math.random() < 0.02) {
+          enemyBullets.push({ x: enemy.x, y: enemy.y, angle: angleToPlayer });
+        }
+      });
+
+      updateHealthDots();
+      updateBoss();
+
+      if (enemies.length === 0 && boss === null) {
+        level++;
+        createEnemies();
+        displayLevelText();
+      }
+
+      if (player.health <= 0) {
+        renderGameOver();
+        return;
+      }
+
+      if (explosionEffect) {
+        explosionEffect.radius += 20;
+        explosionEffect.duration -= 20;
+        if (explosionEffect.duration <= 0) explosionEffect = null;
+      }
+
+      render();
+      requestAnimationFrame(update);
+    }
+
+    function render() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = 'yellow';
+      ctx.beginPath();
+      ctx.arc(player.x, player.y, 20, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = 'black';
+      ctx.fillRect(player.x - 5, player.y - 25, 10, 10);
+
+      ctx.fillStyle = 'red';
+      bullets.forEach(bullet => ctx.fillRect(bullet.x, bullet.y, 5, 5));
+
+      ctx.fillStyle = 'blue';
+      enemyBullets.forEach(bullet => ctx.fillRect(bullet.x, bullet.y, 5, 5));
+
+      ctx.fillStyle = 'red';
+      enemies.forEach(enemy => {
+        ctx.fillRect(enemy.x - 15, enemy.y - 15, 30, 30);
+        ctx.fillStyle = 'black';
+        ctx.fillText(`HP: ${enemy.health}`, enemy.x - 15, enemy.y - 20);
+        ctx.fillStyle = 'red';
+      });
+
+      ctx.fillStyle = 'red';
+      ctx.fillRect(10, 10, 200, 20);
+      ctx.fillStyle = 'green';
+      ctx.fillRect(10, 10, (player.health / 300) * 200, 20);
+      ctx.fillStyle = 'black';
+      ctx.fillText(`Player Health: ${player.health}`, 10, 50);
+      ctx.fillText(`Level: ${level}`, 10, 70);
+      ctx.fillText(`Special Ability: ${specialAbilityReady ? 'Ready' : 'Cooldown'}`, 10, 90);
+
+      ctx.fillStyle = 'red';
+      healthDots.forEach(dot => {
+        ctx.beginPath();
+        ctx.arc(dot.x, dot.y, 10, 0, Math.PI * 2);
+        ctx.fill();
+      });
+
+      if (boss) {
+        ctx.fillStyle = 'blue';
+        ctx.beginPath();
+        ctx.arc(boss.x, boss.y, 50, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = 'black';
+        ctx.fillText(`Boss HP: ${boss.health}`, boss.x - 25, boss.y - 60);
+      }
+
+      if (explosionEffect) {
+        ctx.fillStyle = 'red';
+        ctx.beginPath();
+        ctx.arc(explosionEffect.x, explosionEffect.y, explosionEffect.radius, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    function renderGameOver() {
+      ctx.fillStyle = 'black';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = 'white';
+      ctx.font = '48px Arial';
+      ctx.fillText('Game Over', canvas.width / 2 - 100, canvas.height / 2);
+    }
+
+    function displayLevelText() {
+      levelText = document.createElement('div');
+      levelText.className = 'levelText';
+      levelText.innerText = `Level ${level}`;
+      document.body.appendChild(levelText);
+      setTimeout(() => levelText.remove(), 2000);
+    }
+
+    function startGame() {
+      player.health = 300;
+      level = 1;
+      bullets = [];
+      enemies = [];
+      enemyBullets = [];
+      healthDots = [];
+      healthDotTimer = 0;
+      specialAbilityReady = true;
+      explosionEffect = null;
+      boss = null;
+      createEnemies();
+      homeScreen.style.display = 'none';
+      gameStarted = true;
+      update();
+    }
+
+    function continueGame() {
+      homeScreen.style.display = 'none';
+      gameStarted = true;
+      update();
+    }
+
+    document.getElementById('startGame').addEventListener('click', startGame);
+    document.getElementById('continueGame').addEventListener('click', continueGame);
+    document.getElementById('showMobileControls').addEventListener('click', () => {
+      mobileControls.style.display = 'flex';
+    });
+
+    window.addEventListener('keydown', (e) => keys[e.key] = true);
+    window.addEventListener('keyup', (e) => keys[e.key] = false);
+
+    canvas.addEventListener('mousedown', () => shoot());
+    canvas.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      useSpecialAbility();
+    });
+    canvas.addEventListener('mousemove', (e) => {
+      const dx = e.clientX - player.x;
+      const dy = e.clientY - player.y;
+      player.angle = Math.atan2(dy, dx);
+    });
+
+    // Touch control handling
+    document.querySelectorAll('.controlBtn[data-key]').forEach(btn => {
+      const key = btn.dataset.key;
+      btn.addEventListener('touchstart', () => { mobileKeyHeld[key] = true; });
+      btn.addEventListener('touchend', () => { mobileKeyHeld[key] = false; });
+    });
+    shootBtn.addEventListener('touchstart', shoot);
+    specialBtn.addEventListener('touchstart', useSpecialAbility);
+
+    homeScreen.style.display = 'flex';
+  </script>
+</body>
+</html>
+

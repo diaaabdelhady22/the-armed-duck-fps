@@ -1,0 +1,21 @@
+#startGame {
+padding: 10px;
+background-color: #333;
+
+border-radius: 20px;
+border-color:black;
+}
+#continueGame {
+padding: 10px;
+background-color: #333;
+
+border-radius: 20px;
+border-color:black;
+}
+#showMobileControls {
+    padding: 10px;
+    background-color: #333;
+    
+    border-radius: 20px;
+    border-color:black;
+    }
